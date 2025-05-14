@@ -25,3 +25,8 @@ Este projeto tem como objetivo aplicar conceitos de estatística e probabilidade
 - Aprimorar habilidades com R e visualização de dados
 
 ## 📁 Estrutura do Projeto
+├── dados/ # Base de dados bruta e tratada
+├── scripts/ # Scripts R para análise e visualização
+├── relatorio.Rmd # Relatório principal em RMarkdown
+├── dashboard.Rmd # Flexdashboard interativo
+└── README.md # Descrição do projeto
