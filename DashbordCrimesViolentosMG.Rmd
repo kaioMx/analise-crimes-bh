@@ -1,0 +1,334 @@
+
+---
+title: "Analise Estatisca de Crimes - Belo Horizonte"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: cosmo
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(DT)
+library(purrr)
+
+# Leitura do banco de dados unificado
+dados_completo <- tryCatch({
+  read.csv("crimes_unificado.csv", stringsAsFactors = FALSE, sep = ";")
+}, error = function(e) {
+  message("Erro ao carregar os dados: ", e$message)
+  NULL
+})
+
+if (is.null(dados_completo)) {
+  stop("Erro ao carregar os dados. Verifique o caminho do arquivo.")
+}
+
+bh_total <- dados_completo %>%
+  filter(municipio == "BELO HORIZONTE")
+
+lista_crimes <- sort(unique(bh_total$natureza))
+```
+
+#  Distribuições Estatísticas
+Column {.sidebar}
+---------------------------------------------------------------------
+```{r}
+selectInput("ano", "Escolha o Ano:", choices = sort(unique(bh_total$ano)))
+selectInput("crime", "Escolha o Tipo de Crime:", choices = lista_crimes)
+selectInput("distribuicao", "Escolha a Distribuição:",
+            choices = c("Normal", "Exponencial", "Uniforme Contínua"))
+```
+
+
+Column {data-width=20}
+-----------------------------------------------------------------------
+#### **Gráfico da Distribuição**
+
+```{r}
+renderPlot({
+  dados_filtrados <- bh_total %>%
+    filter(ano == input$ano & natureza == input$crime)
+
+  if (nrow(dados_filtrados) == 0) return(NULL)
+
+  reais <- dados_filtrados$registros
+
+  if (input$distribuicao == "Normal") {
+    esperado <- rnorm(1000, mean = mean(reais), sd = sd(reais))
+  } else if (input$distribuicao == "Exponencial") {
+    esperado <- rexp(1000, rate = 1 / mean(reais))
+  } else {
+    esperado <- runif(1000, min = min(reais), max = max(reais))
+  }
+
+  df <- data.frame(
+    valores = c(reais, esperado),
+    tipo = rep(c("Reais", "Esperados"), c(length(reais), length(esperado)))
+  )
+
+  ggplot(df, aes(x = valores, fill = tipo)) +
+    geom_histogram(alpha = 0.6, position = "identity", bins = 30, color = "black") +
+    labs(title = "Comparação: Reais vs Esperados", x = "Registros", y = "Frequência") +
+    scale_fill_manual(values = c("steelblue", "tomato")) +
+    theme_minimal()
+})
+```
+
+
+Column {data-width=10}
+-----------------------------------------------------------------------
+#### **Tabela da Distribuição**
+
+```{r}
+renderDataTable({
+  dados_filtrados <- bh_total %>%
+    filter(ano == input$ano & natureza == input$crime)
+
+  if (nrow(dados_filtrados) == 0) return(NULL)
+
+  reais <- dados_filtrados$registros
+
+  if (input$distribuicao == "Normal") {
+    esperado <- rnorm(1000, mean = mean(reais), sd = sd(reais))
+  } else if (input$distribuicao == "Exponencial") {
+    esperado <- rexp(1000, rate = 1 / mean(reais))
+  } else {
+    esperado <- runif(1000, min = min(reais), max = max(reais))
+  }
+
+  data.frame(
+    Estatística = c("Soma Reais", "Média Esperados"),
+    Valor = c(sum(reais), round(mean(esperado), 2))
+  )
+})
+```
+
+# Estatística Descritiva {.tabset}
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+selectInput("crime_descritivo", "Tipo de Crime:",
+            choices = sort(unique(bh_total$natureza)),
+            selected = "Homicídio Tentado")
+
+selectInput("ano_descritivo", "Ano:",
+            choices = sort(unique(bh_total$ano)),
+            selected = max(bh_total$ano))  # já começa com o mais recente selecionado
+
+```
+
+Column {data-width=6}
+---------------------------------------------------------------------
+### Boxplot por Ano e Mês
+
+```{r}
+
+renderPlot({
+  req(input$crime_descritivo)
+  req(input$ano_descritivo)
+
+  dados_filtrados <- bh_total %>%
+    filter(natureza == input$crime_descritivo, ano == input$ano_descritivo) %>%
+    group_by(mes) %>%
+    summarise(reg_total = sum(registros), .groups = "drop")
+
+  dados_filtrados$crime <- input$crime_descritivo  # categoria literal
+
+ggplot(dados_filtrados, aes(x = factor(1), y = reg_total)) +
+
+  geom_boxplot(fill = "green", width = 0.3) +  # força largura
+  stat_summary(fun = mean, geom = "point", shape = 4, size = 3, color = "black") +
+  labs(
+    title = paste("Boxplot - Total de Registros Mensais em", input$ano_descritivo),
+    x = "Crime", y = "Total de Registros por Mês"
+  ) +
+  theme_minimal()
+
+}, height = 600, width = 600)
+
+
+```
+
+
+Column {data-width=6}
+---------------------------------------------------------------------
+
+
+### Histograma de Registros
+
+```{r}
+renderPlot({
+  bh_total %>%
+    filter(natureza == input$crime_descritivo) %>%
+    ggplot(aes(x = registros)) +
+    geom_histogram(binwidth = 5, fill = "steelblue", color = "black") +
+    labs(title = paste("Histograma -", input$crime_descritivo),
+         x = "Registros", y = "Frequência") +
+    theme_classic()
+}, height = 250)
+```
+
+
+### Tabela Resumo por Ano
+
+```{r}
+renderDT({
+  bh_total %>%
+    filter(natureza == input$crime_descritivo) %>%
+    group_by(ano) %>%
+    summarise(
+      Média = round(mean(registros), 2),
+      Mediana = median(registros),
+      CV = round(sd(registros) / mean(registros) * 100, 2)
+    )
+})
+```
+
+
+#  Análises Estatísticas Comparativas
+Column {.sidebar}
+---------------------------------------------------------------------
+```{r}
+selectInput("crime_escolhido", "Escolha o Crime:", choices = unique(bh_total$natureza))
+
+checkboxGroupInput("anos_escolhidos", "Escolha os Anos:", 
+                   choices = unique(bh_total$ano), 
+                   selected = c(2022, 2023))
+
+# Observador que limita a seleção a no máximo 2 anos
+observe({
+  if (length(input$anos_escolhidos) > 2) {
+    updateCheckboxGroupInput(
+      session, 
+      "anos_escolhidos", 
+      selected = head(input$anos_escolhidos, 2)
+    )
+  }
+})
+
+```
+
+Column {data-width=6}
+---------------------------------------------------------------------
+### Intervalo de Confiança (95%) por Ano
+
+```{r}
+renderPlot({
+  req(input$crime_escolhido)
+  req(length(input$anos_escolhidos) == 2)
+
+  anos_sel <- sort(input$anos_escolhidos)
+  dados_22 <- bh_total %>% filter(natureza == input$crime_escolhido, ano == anos_sel[1])
+  dados_23 <- bh_total %>% filter(natureza == input$crime_escolhido, ano == anos_sel[2])
+
+  x_22 <- dados_22$registros
+  x_23 <- dados_23$registros
+
+  media_22 <- mean(x_22)
+  media_23 <- mean(x_23)
+  dp_22 <- sd(x_22)
+  dp_23 <- sd(x_23)
+  n_22 <- length(x_22)
+  n_23 <- length(x_23)
+
+  dif_media <- media_22 - media_23
+  erro_dif <- sqrt((dp_22^2 / n_22) + (dp_23^2 / n_23))
+
+  z_critico <- qnorm(0.975)  # z = 1.96
+
+  lim_inf <- dif_media - z_critico * erro_dif
+  lim_sup <- dif_media + z_critico * erro_dif
+
+  media_plot <- dif_media
+  desvio_plot <- erro_dif
+  x_vals <- seq(media_plot - 4*desvio_plot, media_plot + 4*desvio_plot, length.out = 200)
+  dens <- dnorm(x_vals, mean = media_plot, sd = desvio_plot)
+  df_plot <- data.frame(x = x_vals, y = dens)
+
+  ggplot(df_plot, aes(x = x, y = y)) +
+    geom_line(color = "steelblue", size = 1.2) +
+    geom_ribbon(data = subset(df_plot, x >= lim_inf & x <= lim_sup),
+                aes(ymin = 0, ymax = y), fill = "lightblue", alpha = 0.5) +
+    geom_vline(xintercept = media_plot, color = "red", linetype = "dashed", size = 1) +
+    annotate("text", x = media_plot, y = max(dens), label = paste0("Dif. Médias = ", round(media_plot,2)),
+             color = "red", vjust = -0.5, size = 4) +
+    annotate("text", x = lim_inf, y = 0.015, 
+             label = paste0("IC 95%: [", round(lim_inf, 2), ", ", round(lim_sup, 2), "]"),
+             hjust = 0, size = 4) +
+    annotate("text", x = media_plot + 1.5*desvio_plot, y = 0.02, 
+             label = paste0("z crítico (95%) ≈ ", round(z_critico, 2)),
+             size = 4, color = "black") +
+    labs(x = paste("Diferença de Registros (", anos_sel[1], " - ", anos_sel[2], ")"),
+         y = "Densidade",
+         title = "Intervalo de Confiança para a Diferença entre Médias (95%)") +
+    theme_minimal()
+})
+
+
+```
+
+Column {data-width=5}
+-------------------------------------------------
+
+### Teste de Hipótese: Entre em Médias dos anos
+
+```{r}
+renderPlot({
+  req(input$crime_escolhido)
+  req(length(input$anos_escolhidos) == 2)
+
+  anos_sel <- sort(input$anos_escolhidos)
+  dados_1 <- bh_total %>% filter(natureza == input$crime_escolhido, ano == anos_sel[1]) %>%
+    group_by(mes) %>% summarise(registros = sum(registros), .groups = "drop")
+
+  dados_2 <- bh_total %>% filter(natureza == input$crime_escolhido, ano == anos_sel[2]) %>%
+    group_by(mes) %>% summarise(registros = sum(registros), .groups = "drop")
+
+  media_1 <- mean(dados_1$registros)
+  media_2 <- mean(dados_2$registros)
+  sd_1 <- sd(dados_1$registros)
+  sd_2 <- sd(dados_2$registros)
+  n1 <- nrow(dados_1)
+  n2 <- nrow(dados_2)
+
+  erro <- sqrt((sd_1^2 / n1) + (sd_2^2 / n2))
+  z_calc <- (media_1 - media_2) / erro
+  z_crit <- qnorm(0.975)
+
+  decisao <- if (abs(z_calc) > z_crit) "Rejeita H0" else "Não rejeita H0"
+
+  x <- seq(-4, 4, length.out = 500)
+  y <- dnorm(x)
+  df <- data.frame(x = x, y = y)
+
+  ggplot(df, aes(x = x, y = y)) +
+    geom_area(data = subset(df, x < -z_crit), aes(y = y), fill = "red", alpha = 0.5) +
+    geom_area(data = subset(df, x > z_crit), aes(y = y), fill = "red", alpha = 0.5) +
+    geom_line(color = "black", size = 1.2) +
+    geom_vline(xintercept = z_calc, color = "blue", linetype = "dashed", size = 1.2) +
+    annotate("text", x = z_calc, y = 0.05,
+             label = paste0("z = ", round(z_calc, 3)), color = "blue", hjust = -0.2) +
+    geom_point(aes(x = -3.5, y = 0.35), color = "black") +
+    annotate("text", x = -3.2, y = 0.35, label = "Distribuição Normal Padrão", hjust = 0) +
+    geom_rect(aes(xmin = -3.5, xmax = -3.3, ymin = 0.3, ymax = 0.32), fill = "red", alpha = 0.5) +
+    annotate("text", x = -3.2, y = 0.31, label = "Zona de Rejeição (< -1.96)", hjust = 0) +
+    geom_rect(aes(xmin = -3.5, xmax = -3.3, ymin = 0.25, ymax = 0.27), fill = "red", alpha = 0.5) +
+    annotate("text", x = -3.2, y = 0.26, label = "Zona de Rejeição (> 1.96)", hjust = 0) +
+    labs(
+      title = "Distribuição Normal com Zonas de Rejeição (±1.96)",
+      subtitle = paste("Decisão:", decisao),
+      x = "Estatística z",
+      y = "Densidade"
+    ) +
+    theme_minimal()
+})
+```
+
+

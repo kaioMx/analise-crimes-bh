@@ -1,0 +1,1054 @@
+---
+title: "Relatório de Estatística Descritiva - Crimes"
+author: "Kaio Máximo e Thomaz Otávio"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    bookdown::html_document2:
+       highlight: espresso
+       includes:
+         in_header: "cabecalho.html"
+       theme: flatly
+       number_sections: true
+       fig_caption: false  # 🔴 ADICIONADO AQUI PARA EVITAR DUPLICAÇÃO
+       toc: yes
+       toc_float: 
+         collapsed: yes
+         smooth_scroll: no
+---
+
+
+# Introdução  
+
+Este relatório apresenta uma análise descritiva dos crimes registrados em um banco de dados contendo informações como **natureza do crime**, **município**, **mês**, **ano**, entre outras variáveis. O objetivo é fornecer insights sobre a distribuição dos crimes ao longo do tempo e por região, utilizando estatísticas descritivas, gráficos e tabelas. Os dados foram obtidos no seguinte link: [Dados MG](https://dados.mg.gov.br/dataset/crimes-violentos/resource/bd02f7db-04cc-4149-98ee-e6fb2e713b04).
+
+#  Leitura e preparo dos dados
+```{r leitura_dados_bh_total, message = FALSE, warning = FALSE}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(kableExtra)
+library(gridExtra)
+
+# Lendo a base unificada e filtrando apenas BH
+bh_total <- read_delim("crimes_unificado.csv", delim = ";", show_col_types = FALSE) %>%
+  filter(municipio == "BELO HORIZONTE")
+
+# Criar os 10 crimes com mais registros para uso posterior
+top_crimes <- bh_total %>%
+  group_by(natureza) %>%
+  summarise(total = sum(registros), .groups = "drop") %>%
+  arrange(desc(total)) %>%
+  slice_max(total, n = 10)
+
+dados_top10 <- bh_total %>%
+  filter(natureza %in% top_crimes$natureza)
+
+# Visualização rápida
+head(bh_total)
+
+
+
+```
+
+```{r visualizar_dados, message = FALSE, warning = FALSE}
+library(kableExtra)
+
+# Visualizando as primeiras linhas
+kable(head(bh_total, 10)) %>%
+  kable_classic(full_width = FALSE, html_font = "Cambria")
+
+# Número de registros
+
+```
+# Estatistica Descretiva 
+
+## Estatísticas descritivas para cada tipo de crime
+
+### - Tabela 3.1 – Estatísticas Descritivas dos Crimes em Belo Horizonte
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(kableExtra)
+
+estatisticas_crimes_bh <- bh_total %>%
+  group_by(natureza) %>%
+  summarise(
+    media = round(mean(registros), 2),
+    mediana = round(median(registros), 2),
+    moda = as.numeric(names(sort(table(registros), decreasing = TRUE)[1]))
+  ) %>%
+  arrange(desc(media))
+
+kable(estatisticas_crimes_bh, 
+      col.names = c("Natureza", "Média", "Mediana", "Moda")) %>%
+  kable_classic(full_width = FALSE, html_font = "Cambria") %>%
+  add_footnote("Fonte: Elaborado pelos autores com dados da SEJUSP/MG.")
+
+
+
+```
+## Boxplot dos 10 Crimes Mais Frequentes
+
+```{r boxplot_crimes_frequentes, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+
+# Filtrar os dados sem "Roubo Consumado"
+dados_sem_roubo <- dados_top10 %>%
+  filter(natureza != "Roubo Consumado")
+
+# Calcular a média por crime para desenhar o X
+medias <- dados_sem_roubo %>%
+  group_by(natureza) %>%
+  summarise(media = mean(registros), .groups = "drop")
+
+# Boxplot com T nos bigodes + X da média
+ggplot(dados_sem_roubo, aes(x = reorder(natureza, registros, FUN = median), y = registros)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red", width = 0.5) +
+  geom_point(data = medias, aes(x = natureza, y = media), 
+             shape = 4, size = 1, color = "black", stroke = 1.2) +  # shape 4 = "X"
+  labs(title = "Boxplot (Exceto Roubo Consumado)",
+       x = "Natureza do Crime", y = "Registros Mensais") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+## Mediana Mensal de Crimes por Natureza (2022–2024)
+
+```{r mediana_top10_sem_roubo, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+# Garantir data como coluna para eixo X
+bh_total$data_ref <- as.Date(paste0(bh_total$ano, "-", bh_total$mes, "-01"))
+
+# Pegar os 10 crimes mais registrados
+top10_crimes <- bh_total %>%
+  group_by(natureza) %>%
+  summarise(total = sum(registros), .groups = "drop") %>%
+  arrange(desc(total)) %>%
+  filter(natureza != "Roubo Consumado") %>%
+  slice_max(order_by = total, n = 3)
+
+# Filtrar os dados para os top 10 (sem Roubo Consumado)
+dados_mediana <- bh_total %>%
+  filter(natureza %in% top10_crimes$natureza)
+
+# Calcular a mediana mensal por tipo de crime
+mediana_mensal_top10 <- dados_mediana %>%
+  group_by(natureza, data_ref) %>%
+  summarise(mediana = median(registros), .groups = "drop")
+
+# Gráfico
+ggplot(mediana_mensal_top10, aes(x = data_ref, y = mediana, color = natureza)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Evolução da Mediana Mensal dos 10 Crimes Mais Registrados (Exceto Roubo Consumado)",
+    subtitle = "Período: 2022 a 2024 — Belo Horizonte",
+    x = "Mês/Ano",
+    y = "Mediana dos Registros Mensais",
+    color = "Natureza do Crime"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+
+# Probobalidade
+
+```{r prob_crimes_frequentes, message = FALSE, warning = FALSE}
+# Somando os registros reais por tipo de crime (natureza)
+tabela_prob <- bh_total %>%
+  group_by(natureza) %>%
+  summarise(registros = sum(registros)) %>%
+  mutate(probabilidade = registros / sum(registros)) %>%  # Cálculo manual da probabilidade real
+  arrange(desc(probabilidade)) %>%  # Ordena pela probabilidade (ou registros)
+  slice_max(order_by = registros, n = 10)
+
+# Exibir tabela formatada
+kable(tabela_prob, col.names = c("Natureza do Crime", "Registros", "Probabilidade")) %>%
+  kable_classic(full_width = FALSE, html_font = "Cambria") 
+
+
+
+```
+*Legenda:* A probabilidade de cada tipo de crime é calculada da seguinte forma)
+
+*P(crime)* = Frequência do crime / Frequência total de crimes
+
+Ou seja, a probabilidade é a razão entre o número de ocorrências de cada tipo de crime e o total de ocorrências de todos os crimes.
+
+## Distribuição Binomial – Exemplo com Ocorrência de Estupros Consumados
+
+```{r dist_binomial, message=FALSE, warning=FALSE}
+# Parâmetros da distribuição binomial
+n <- 10  # número de tentativas (número de meses)
+p <- 0.12  # probabilidade de sucesso
+
+# Filtrando os dados para "Estupro Consumado"
+crime_filtro <- "Estupro Consumado"
+dados_crime <- bh_total[bh_total$natureza == crime_filtro, ]
+
+# Contagem dos registros por número de sucessos (agrupar por mês e somar os registros)
+contagem_mensal <- dados_crime %>%
+  group_by(mes) %>%
+  summarise(registros = sum(registros))
+
+# Cálculo das probabilidades binomiais teóricas ajustadas
+esperados <- rbinom(n = length(contagem_mensal$registros), size = n, prob = p)
+
+# Gráfico Observados vs Esperados
+p1 <- ggplot(contagem_mensal, aes(x = mes)) +
+  geom_bar(aes(y = registros), stat = "identity", fill = "skyblue", color = "black", alpha = 0.7, width = 0.4, position = "dodge") +
+  labs(
+    title = "Observados",
+    x = "Número de Sucessos",
+    y = "Frequência"
+  ) +
+  theme_minimal()
+
+p2 <- ggplot(data.frame(mes = contagem_mensal$mes, esperados = esperados), aes(x = mes)) +
+  geom_bar(aes(y = esperados), stat = "identity", fill = "brown", color = "black", alpha = 0.7, width = 0.4, position = "dodge") +
+  labs(
+    title = "Esperados",
+    x = "Número de Sucessos",
+    y = "Frequência"
+  ) +
+  theme_minimal()
+
+grid.arrange(p1, p2, ncol = 2)
+
+
+```
+ 
+## Distribuição de Poisson - Probabilidade de 100 homicídios em um mês
+
+```{r dist_poisson, message=FALSE, warning=FALSE}
+
+# Parâmetros
+lambda <- 90   # média mensal de homicídios
+k <- 100       # valor específico desejado
+
+# Cálculo da probabilidade com distribuição de Poisson
+prob_poisson <- dpois(k, lambda) * 100
+
+# Exibindo o resultado formatado
+paste0("P(X = 100 homicídios) = ", round(prob_poisson, 2), "%")
+
+```
+## Gráfico da Distribuição de Poisson
+
+```{r dist_poisson_grafico, message=FALSE, warning=FALSE}
+library(ggplot2)
+
+# Definir o parâmetro λ da distribuição de Poisson
+lambda <- 5  # Exemplo de valor de λ (média de homicídios)
+
+# Definir os valores de homicídios e as probabilidades
+x_vals <- 0:20  # Ajustando o intervalo de homicídios para uma gama mais apropriada
+probs <- dpois(x_vals, lambda) * 100
+
+# Criar o data frame para o gráfico
+df_poisson <- data.frame(
+  homicidios = x_vals,
+  prob = probs
+)
+
+# Definir o intervalo de homicídios para destaque (como comparação)
+a1 <- 3
+b1 <- 7
+
+# Gráfico da distribuição de Poisson com a área sombreada e linha de comparação
+ggplot(df_poisson, aes(x = homicidios, y = prob)) +
+  geom_bar(stat = "identity", fill = "steelblue") +  # Barras para a distribuição
+  geom_area(data = subset(df_poisson, homicidios >= a1 & homicidios <= b1), fill = "skyblue", alpha = 0.5) + # Área real observada
+  geom_line(aes(x = homicidios, y = prob), color = "red", size = 1.5) +  # Linha de comparação da distribuição de Poisson
+  labs(
+    title = paste0("Distribuição de Poisson (λ = ", lambda, ")"),
+    subtitle = paste("Probabilidade observada para homicídios entre", a1, "e", b1),
+    x = "Número de Homicídios",
+    y = "Probabilidade (%)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+## Comparação: Distribuição Real vs Uniforme por Mês - Anos 2022, 2023 e 2024
+
+```{r comparar_roubo_uniforme, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Função adaptada para apenas "Roubo Consumado"
+grafico_roubo_uniforme <- function(ano_escolhido) {
+  
+  dados_ano <- bh_total %>%
+    filter(ano == ano_escolhido, natureza == "Roubo Consumado") %>%
+    group_by(mes) %>%
+    summarise(registros_reais = sum(registros), .groups = "drop") %>%
+    mutate(
+      total_ano = sum(registros_reais),
+      registros_uniforme = total_ano / 12,
+      mes_nome = factor(mes, levels = 1:12, labels = month.name)
+    )
+  
+  dados_plot <- dados_ano %>%
+    select(mes_nome, registros_reais, registros_uniforme) %>%
+    pivot_longer(cols = c(registros_reais, registros_uniforme),
+                 names_to = "tipo", values_to = "registros")
+  
+  ggplot(dados_plot, aes(x = mes_nome, y = registros, fill = tipo)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(
+      values = c("registros_reais" = "tomato", "registros_uniforme" = "skyblue"),
+      labels = c("Real", "Uniforme")
+    ) +
+    labs(
+      title = paste("Roubo Consumado: Real vs Uniforme - Ano", ano_escolhido),
+      x = "Mês",
+      y = "Número de Registros",
+      fill = "Distribuição"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+# Gerar os gráficos para os três anos
+grafico_roubo_uniforme(2022)
+grafico_roubo_uniforme(2023)
+grafico_roubo_uniforme(2024)
+```
+
+  Legenda – Comparação Real vs. Uniforme por Mês
+
+Neste gráfico, comparamos o número real de **Roubos Consumados** registrados por mês com uma **Distribuição Uniforme Discreta Teórica**, assumindo que:
+
+\[
+P(\text{qualquer mês}) = \frac{1}{12} \Rightarrow \text{mesmo número esperado de registros em todos os meses}
+\]
+
+**Distribuição Uniforme usada:**  
+O valor uniforme por mês foi calculado como:
+
+\[
+\text{Uniforme} = \frac{\text{Total Anual de Roubos Consumados}}{12}
+\]
+
+Isso representa um cenário onde **todos os meses têm a mesma chance de ocorrência**.
+
+## Tabela - Top 10 Crimes com P(X > 30 Registros por Mês)
+
+```{r tabela_prob_maior_30, message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(kableExtra)
+
+# Seleciona os 10 crimes com mais registros
+top10_crimes <- bh_total %>%
+  group_by(natureza) %>%
+  summarise(total_registros = sum(registros), .groups = "drop") %>%
+  arrange(desc(total_registros)) %>%
+  slice_head(n = 10)
+
+# Dados mensais por crime
+dados_mensais <- bh_total %>%
+  filter(natureza %in% top10_crimes$natureza) %>%
+  group_by(natureza, ano, mes) %>%
+  summarise(registros_mes = sum(registros), .groups = "drop")
+
+# Agrupa e aninha os dados por natureza
+dados_nested <- dados_mensais %>%
+  group_by(natureza) %>%
+  nest()
+
+# Aplica cálculos com base em limite fixo de 30 registros
+tabela_final <- dados_nested %>%
+  mutate(
+    media_mensal = map_dbl(data, ~ mean(.x$registros_mes)),
+    dp_mensal = map_dbl(data, ~ sd(.x$registros_mes)),
+    prob_maior_30 = map2_dbl(media_mensal, dp_mensal, ~ 
+      round(pnorm(30, mean = .x, sd = .y, lower.tail = FALSE) * 100, 2))
+  ) %>%
+  left_join(top10_crimes, by = "natureza") %>%
+  mutate(
+    media_mensal = round(media_mensal, 1),
+    dp_mensal = round(dp_mensal, 1),
+    prob_maior_30 = paste0(prob_maior_30, "%")
+  ) %>%
+  select(natureza, total_registros, media_mensal, dp_mensal, prob_maior_30)
+
+# Exibe a tabela
+kable(
+  tabela_final,
+  col.names = c("Natureza do Crime", "Total de Registros", 
+                "Média Mensal", "Desvio Padrão", "P(> 30 Registros)")
+) %>%
+  kable_classic(full_width = FALSE, html_font = "Cambria")
+
+
+```
+## Distribuição Exponencial - Homicídio Tentado
+
+"Probabilidade de não ocorrer um Homicídio Tentado em determinados intervalos de tempo, com base na Distribuição Exponencial."
+```{r exp_homicidio_tentado, message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+
+# Nome do crime a ser analisado
+nome_crime <- "Homicídio Tentado"
+
+# Filtra dados e calcula registros mensais
+dados_crime <- bh_total %>%
+  filter(natureza == nome_crime) %>%
+  group_by(ano, mes) %>%
+  summarise(registros = sum(registros), .groups = "drop")
+
+# Taxa média (lambda) — utilizada na distribuição exponencial
+lambda <- mean(dados_crime$registros)
+
+# Tempos simulados (em meses) e explicações para apresentação
+tempos <- c(0.10, 0.25, 0.5, 1, 2)
+significados <- c("Até ~3 dias", "Até ~7 dias", "Até ~15 dias", "Até 1 mês", "Até 2 meses")
+
+# Cálculo das probabilidades de NÃO ocorrer crime dentro de cada intervalo
+probs <- round(exp(-lambda * tempos) * 100, 2)
+
+# Montagem da tabela com os resultados
+tabela_exp <- tibble(
+  `Tempo (meses)` = tempos,
+  `Significado` = significados,
+  `P(NÃO ocorrer crime nesse tempo)` = paste0(probs, "%")
+)
+
+
+
+# Preparação do gráfico de barras
+grafico_df <- tibble(
+  Tempo = significados,
+  Probabilidade = probs
+)
+
+# Gráfico de colunas com anotações
+ggplot(grafico_df, aes(x = Tempo, y = Probabilidade)) +
+  geom_col(fill = "tomato") +
+  geom_text(aes(label = paste0(Probabilidade, "%")), vjust = -0.5, size = 4.5) +
+  labs(
+    title = "Distribuição Exponencial - Homicídio Tentado em BH",
+    subtitle = "Probabilidade de NÃO ocorrer o crime em diferentes intervalos de tempo",
+    x = "Intervalo de Tempo",
+    y = "Probabilidade (%)"
+  ) +
+  ylim(0, 100) +
+  theme_minimal()
+
+
+
+```
+
+
+## Integrais com Gráfico - Áreas sob as curvas
+
+
+
+```{r integrais_com_grafico, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(gridExtra)
+
+# ------------ CURVA NORMAL ------------
+media <- 100
+desvio <- 15
+a1 <- 90
+b1 <- 120
+
+# Cálculo da distribuição normal
+x_norm <- seq(60, 140, length.out = 200)
+y_norm <- dnorm(x_norm, mean = media, sd = desvio)
+dados_norm <- data.frame(x = x_norm, y = y_norm)
+
+# Probabilidade real da normal (entre 90 e 120)
+prob_real_norm <- pnorm(b1, media, desvio) - pnorm(a1, media, desvio)
+
+# Gráfico da curva normal com valores reais
+grafico_normal <- ggplot(dados_norm, aes(x, y)) +
+  geom_line() + # Linha da distribuição normal teórica
+  geom_area(data = subset(dados_norm, x >= a1 & x <= b1), fill = "skyblue", alpha = 0.5) + # Área real
+  labs(
+    title = "Distribuição Normal - Real vs Esperado",
+    subtitle = paste("Probabilidade acumulada entre 90 e 120\nReal: ", round(prob_real_norm * 100, 2), "%"),
+    x = "X", y = "Densidade"
+  ) +
+  theme_minimal()
+
+# ------------ CURVA EXPONENCIAL ------------
+lambda <- 2
+a2 <- 0.25
+b2 <- 1
+
+# Cálculo da distribuição exponencial
+x_exp <- seq(0, 2, length.out = 200)
+y_exp <- dexp(x_exp, rate = lambda)
+dados_exp <- data.frame(x = x_exp, y = y_exp)
+
+# Probabilidade real da exponencial (entre 0.25 e 1)
+prob_real_exp <- pexp(b2, lambda) - pexp(a2, lambda)
+
+# Gráfico da curva exponencial com valores reais
+grafico_exp <- ggplot(dados_exp, aes(x, y)) +
+  geom_line() + # Linha da distribuição exponencial teórica
+  geom_area(data = subset(dados_exp, x >= a2 & x <= b2), fill = "orange", alpha = 0.5) + # Área real
+  labs(
+    title = "Distribuição Exponencial - Real vs Esperado",
+    subtitle = paste("Probabilidade entre 0.25 e 1 mês\nReal: ", round(prob_real_exp * 100, 2), "%"),
+    x = "X", y = "Densidade"
+  ) +
+  theme_minimal()
+
+# ------------ CURVA UNIFORME CONTÍNUA ------------
+a <- 0
+b <- 5
+a3 <- 2
+b3 <- 4
+
+# Cálculo da distribuição uniforme
+x_uni <- seq(a, b, length.out = 100)
+y_uni <- rep(1 / (b - a), 100)
+dados_uni <- data.frame(x = x_uni, y = y_uni)
+
+# Probabilidade real da uniforme (entre 2 e 4)
+prob_real_uni <- (b3 - a3) / (b - a)
+
+# Gráfico da curva uniforme contínua com valores reais
+grafico_uniforme <- ggplot(dados_uni, aes(x, y)) +
+  geom_line() + # Linha da distribuição uniforme teórica
+  geom_area(data = subset(dados_uni, x >= a3 & x <= b3), fill = "palegreen3", alpha = 0.5) + # Área real
+  labs(
+    title = "Distribuição Uniforme - Real vs Esperado",
+    subtitle = paste("Probabilidade entre 2 e 4\nReal: ", round(prob_real_uni * 100, 2), "%"),
+    x = "X", y = "Densidade"
+  ) +
+  theme_minimal()
+
+# Mostrar os gráficos lado a lado
+grid.arrange(grafico_normal, grafico_exp, grafico_uniforme, ncol = 1)
+
+
+
+```
+ Legenda com os Resultados Calculados
+Resultados das Áreas sob as Curvas (Simulações):
+ Distribuição Normal:
+
+Média: 100
+
+Desvio Padrão: 15
+
+Intervalo: 90 a 120
+
+Probabilidade: pnorm(120, 100, 15) - pnorm(90, 100, 15)
+*Resultado*: 49,87%
+
+Distribuição Exponencial:
+
+Taxa λ: 2
+
+Intervalo de tempo: 0.25 a 1 mês
+
+Probabilidade: pexp(1, 2) - pexp(0.25, 2)
+*Resultado*: 47,30%
+
+Distribuição Uniforme Contínua:
+
+Intervalo total: [0, 5]
+
+Intervalo de interesse: [2, 4]
+
+Probabilidade: 
+4
+−
+2
+5
+−
+0
+5−0
+4−2
+​
+ 
+*Resultado*: 40%
+
+## 3. Distribuições de Probabilidade e Testes de Aderência
+
+---
+title: "Análise de Distribuições de Probabilidade - Crimes Violentos"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+```
+
+## Carregamento dos dados
+
+```{r}
+dados <- read_csv("crimes_violentos_unificado.csv")
+head(dados)
+```
+
+## Distribuição Binomial - Exemplo
+
+Vamos considerar como "sucesso" quando houver pelo menos 1 registro de estupro por município em determinado mês.
+
+```{r}
+# Criar variável binária: houve ou não registro
+dados <- dados %>%
+  mutate(estupro_ocorreu = ifelse(registros > 0, 1, 0))
+
+# Contar número de sucessos por mês
+sucessos_mes <- dados %>%
+  group_by(ano, mes) %>%
+  summarise(sucessos = sum(estupro_ocorreu), tentativas = n())
+
+# Visualizar
+ggplot(sucessos_mes, aes(x=sucessos)) +
+  geom_histogram(binwidth = 5, fill="steelblue", color="black") +
+  labs(title="Distribuição de municípios com ocorrências de estupro por mês",
+       x="Número de sucessos", y="Frequência")
+```
+
+## Cálculo de Probabilidade - Distribuição Binomial
+
+Exemplo: Qual a probabilidade de termos exatamente 50 municípios com ocorrência de estupro, assumindo n=100 e p=0.3?
+
+```{r}
+dbinom(50, size = 100, prob = 0.3)
+```
+
+## Distribuição Normal - Quantidade de Registros
+
+```{r}
+# Média e desvio padrão
+media_reg <- mean(dados$registros)
+dp_reg <- sd(dados$registros)
+
+# Gráfico
+ggplot(dados, aes(x = registros)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill="lightgreen", color="black") +
+  stat_function(fun = dnorm, args = list(mean = media_reg, sd = dp_reg), color = "red", size=1.2) +
+  labs(title = "Distribuição Normal aproximada para os registros",
+       x = "Registros", y = "Densidade")
+```
+
+## Cálculo de Probabilidade - Distribuição Normal
+
+Qual a probabilidade de registros serem menores ou iguais a 3?
+
+```{r}
+pnorm(3, mean = media_reg, sd = dp_reg)
+```
+
+## Teste de Aderência - Qui-Quadrado (Binomial)
+
+```{r}
+# Frequências observadas
+obs <- table(dados$estupro_ocorreu)
+
+# Esperadas usando p = proporção empírica
+p_emp <- mean(dados$estupro_ocorreu)
+exp <- c((1-p_emp)*sum(obs), p_emp*sum(obs))
+
+chisq.test(x = obs, p = exp/sum(exp))
+```
+
+## Teste de Aderência - Qui-Quadrado (Normal)
+
+```{r}
+# Agrupar registros em faixas
+dados$faixa <- cut(dados$registros, breaks = c(-1,0,1,2,3,5,10,20, Inf))
+
+# Frequência observada
+freq_obs <- table(dados$faixa)
+
+# Frequência esperada com base na normal
+faixas <- c(0,1,2,3,5,10,20)
+probs_esp <- diff(pnorm(faixas, mean = media_reg, sd = dp_reg))
+probs_esp <- c(pnorm(0, mean = media_reg, sd = dp_reg), probs_esp, 1 - pnorm(20, mean = media_reg, sd = dp_reg))
+freq_esp <- probs_esp * sum(freq_obs)
+
+chisq.test(freq_obs, p = probs_esp)
+```
+# Inferecial 
+
+## Intervalo de Confiança de "Homicídios Tentados" em 2022
+```{r, fig.width=7, fig.height=6}
+
+# Filtrar os dados (use um crime e ano de exemplo)
+dados_ic <- bh_total %>%
+  filter(natureza == "Homicídio Tentado", ano == 2022)
+
+# Cálculo da média, desvio padrão e erro padrão
+media_mensal <- dados_ic$registros
+media <- mean(media_mensal)
+desvio <- sd(media_mensal)
+erro <- qt(0.975, df = length(media_mensal)-1) * desvio / sqrt(length(media_mensal))
+z_critico <- round(qnorm(0.975), 2)  # z = 1.96 para 95%
+
+# Limites do intervalo de confiança
+lim_inf <- media - erro
+lim_sup <- media + erro
+
+# Construção da curva normal
+x_vals <- seq(media - 4*desvio, media + 4*desvio, length.out = 200)
+dens <- dnorm(x_vals, mean = media, sd = desvio)
+df <- data.frame(x = x_vals, y = dens)
+
+# Plot com z crítico
+library(ggplot2)
+ggplot(df, aes(x = x, y = y)) +
+  geom_line(color = "steelblue", size = 1.2) +
+  geom_ribbon(data = subset(df, x >= lim_inf & x <= lim_sup),
+              aes(ymin = 0, ymax = y), fill = "lightblue", alpha = 0.5) +
+  geom_vline(xintercept = media, color = "red", linetype = "dashed", size = 1) +
+  annotate("text", x = media, y = max(dens), label = paste0("Média = ", round(media,2)), color = "red", vjust = -0.5, size = 4) +
+  annotate("text", x = lim_inf, y = 0.015, 
+           label = paste0("IC 95%: [", round(lim_inf, 2), ", ", round(lim_sup, 2), "]"),
+           hjust = 0, size = 4) +
+  annotate("text", x = media + 1.5*desvio, y = 0.02, 
+           label = paste0("z crítico (95%) = ", z_critico),
+           size = 4, color = "black") +
+  labs(x = "Registros", y = "Densidade", title = "Distribuição Normal com Intervalo de Confiança (95%)") +
+  theme_minimal()
+
+
+
+# Filtrando os dados
+dados_filtrados <- bh_total %>%
+  filter(natureza == "Homicídio Tentado", ano == 2023)
+
+# Cálculo do erro padrão
+dp <- sd(dados_filtrados$registros)
+n <- nrow(dados_filtrados)
+erro_padrao <- dp / sqrt(n)
+
+# Exibição formatada
+cat("### Erro Padrão da Média\n")
+cat(paste0("Para o crime **Homicídio Tentado** no ano de **2023**, o erro padrão da média é aproximadamente: **", round(erro_padrao, 2), "**."))
+
+
+```
+## Intervalo de Confiança para diferença entre duas médias de "Homicídios Tentados" em 2022/2023
+
+```{r}
+
+# Filtrar os dados para 2022 e 2023
+dados_22 <- bh_total %>% filter(natureza == "Homicídio Tentado", ano == 2022)
+dados_23 <- bh_total %>% filter(natureza == "Homicídio Tentado", ano == 2023)
+
+# Extrair vetores de registros
+x_22 <- dados_22$registros
+x_23 <- dados_23$registros
+
+# Estatísticas
+media_22 <- mean(x_22)
+media_23 <- mean(x_23)
+dp_22 <- sd(x_22)
+dp_23 <- sd(x_23)
+n_22 <- length(x_22)
+n_23 <- length(x_23)
+
+# Diferença entre médias
+dif_media <- media_22 - media_23
+
+# Erro padrão da diferença
+erro_dif <- sqrt((dp_22^2 / n_22) + (dp_23^2 / n_23))
+
+# Valor crítico t (graus de liberdade aproximados via Welch)
+gl <- ((dp_22^2 / n_22 + dp_23^2 / n_23)^2) / 
+      ((dp_22^2 / n_22)^2 / (n_22 - 1) + (dp_23^2 / n_23)^2 / (n_23 - 1))
+t_critico <- qt(0.975, df = gl)
+
+# Intervalo de confiança
+lim_inf <- dif_media - t_critico * erro_dif
+lim_sup <- dif_media + t_critico * erro_dif
+
+# Construção da curva da diferença com IC
+media_plot <- dif_media
+desvio_plot <- erro_dif
+x_vals <- seq(media_plot - 4*desvio_plot, media_plot + 4*desvio_plot, length.out = 200)
+dens <- dnorm(x_vals, mean = media_plot, sd = desvio_plot)
+df_plot <- data.frame(x = x_vals, y = dens)
+
+# Gráfico
+library(ggplot2)
+ggplot(df_plot, aes(x = x, y = y)) +
+  geom_line(color = "steelblue", size = 1.2) +
+  geom_ribbon(data = subset(df_plot, x >= lim_inf & x <= lim_sup),
+              aes(ymin = 0, ymax = y), fill = "lightblue", alpha = 0.5) +
+  geom_vline(xintercept = media_plot, color = "red", linetype = "dashed", size = 1) +
+  annotate("text", x = media_plot, y = max(dens), label = paste0("Dif. Médias = ", round(media_plot,2)), color = "red", vjust = -0.5, size = 4) +
+  annotate("text", x = lim_inf, y = 0.015, 
+           label = paste0("IC 95%: [", round(lim_inf, 2), ", ", round(lim_sup, 2), "]"),
+           hjust = 0, size = 4) +
+  annotate("text", x = media_plot + 1.5*desvio_plot, y = 0.02, 
+           label = paste0("t crítico (95%) ≈ ", round(t_critico, 2)),
+           size = 4, color = "black") +
+  labs(x = "Diferença de Registros (2022 - 2023)", y = "Densidade", 
+       title = "Intervalo de Confiança para a Diferença entre Médias (95%)") +
+  theme_minimal()
+
+
+```
+
+## Teste de Hipótese - Sequestro e Cárcere Privado Consumado
+
+```{r}
+# H0: μ = 20 (A média de registros mensais é igual a 20)
+# H1: μ ≠ 20 (A média de registros mensais é diferente de 20)
+
+# Vamos usar α = 0.05 (nível de 5% de significância)
+alfa <- 0.05
+
+# A estatística do teste será o t de Student, pois temos desvio amostral e n pequeno
+# t = (x̄ - μ) / (s / √n)
+
+# A região de rejeição de H0 é: t < -t_crit OU t > t_crit
+# A região de não rejeição de H0 é: -t_crit ≤ t ≤ t_crit
+
+# Leitura da base e filtragem
+bh_total <- read_delim("crimes_unificado.csv", delim = ";", show_col_types = FALSE) %>%
+  filter(municipio == "BELO HORIZONTE",
+         natureza == "Sequestro e Cárcere Privado Consumado")
+
+dados_mensal <- bh_total %>%
+  group_by(ano, mes) %>%
+  summarise(registros = sum(registros), .groups = "drop")
+
+media_mensal <- dados_mensal$registros
+media_amostral <- mean(media_mensal)
+desvio_amostral <- sd(media_mensal)
+n <- length(media_mensal)
+media_h0 <- 20
+
+# Estatística t
+t_calc <- (media_amostral - media_h0) / (desvio_amostral / sqrt(n))
+
+# Valor crítico
+t_critico <- qt(1 - alfa/2, df = n - 1)
+
+media_amostral
+desvio_amostral
+t_calc
+t_critico
+
+# Verifica se está na zona de rejeição
+if (abs(t_calc) > t_critico) {
+  decisao <- "Rejeita H0"
+} else {
+  decisao <- "Não rejeita H0"
+}
+decisao
+
+paste("Com 95% de confiança, a decisão é:", decisao, 
+      "pois t =", round(t_calc, 3), "e o valor crítico é ±", round(t_critico, 3))
+
+## 8. Curva t com Zonas de Rejeição (t-crítico)
+
+
+# Estatística já calculada anteriormente
+# media_amostral, media_h0, desvio_amostral, n
+
+# Parâmetros
+media_h0 <- 20
+z_critico <- qnorm(0.975)  # 1.96
+media_amostral <- mean(media_mensal)
+desvio_amostral <- sd(media_mensal)
+n <- length(media_mensal)
+erro_padrao <- desvio_amostral / sqrt(n)
+z_calculado <- (media_amostral - media_h0) / erro_padrao
+
+# Curva padrão
+x <- seq(-4, 4, length.out = 500)
+y <- dnorm(x)
+df_plot <- data.frame(x = x, y = y)
+
+# Plot
+ggplot(df_plot, aes(x = x, y = y)) +
+  # Zonas de rejeição
+  geom_area(data = subset(df_plot, x < -z_critico), aes(y = y), fill = "red", alpha = 0.5) +
+  geom_area(data = subset(df_plot, x > z_critico), aes(y = y), fill = "red", alpha = 0.5) +
+  # Curva normal
+  geom_line(color = "black", size = 1.2) +
+  # Linha z calculado
+  geom_vline(xintercept = 2.032, color = "blue", linetype = "dashed", size = 1.2) +
+  annotate("text", x = 2.032, y = 0.05,
+           label = paste0(round(2.032, 3)), color = "blue", hjust = -0.2) +
+  # Legenda manual (fingida com geom)
+  geom_point(aes(x = -3.5, y = 0.35), color = "black") +
+  annotate("text", x = -3.2, y = 0.35, label = "Distribuição Normal Padrão", hjust = 0) +
+  geom_rect(aes(xmin = -3.5, xmax = -3.3, ymin = 0.3, ymax = 0.32), fill = "red", alpha = 0.5) +
+  annotate("text", x = -3.2, y = 0.31, label = "Zona de Rejeição (< -1.96)", hjust = 0) +
+  geom_rect(aes(xmin = -3.5, xmax = -3.3, ymin = 0.25, ymax = 0.27), fill = "red", alpha = 0.5) +
+  annotate("text", x = -3.2, y = 0.26, label = "Zona de Rejeição (> 1.96)", hjust = 0) +
+  # Título e eixos
+  labs(title = "Distribuição Normal com Zonas de Rejeição (±1,96)",
+       x = "Valor Z",
+       y = "Densidade") +
+  theme_minimal()
+```
+
+## Teste de Hipótese: Diferença Sequestro e Cárcere Privado Consumado entre Médias (2022 vs 2023)
+```{r}
+# H0: μ2022 = μ2023
+# H1: μ2022 ≠ μ2023
+# Nível de significância: 5% (α = 0.05)
+alfa <- 0.05
+
+# Leitura da base e filtragem
+bh_total <- read_delim("crimes_unificado.csv", delim = ";", show_col_types = FALSE) %>%
+  filter(municipio == "BELO HORIZONTE",
+         natureza == "Sequestro e Cárcere Privado Consumado")
+
+# Conversão
+bh_total$registros <- as.numeric(bh_total$registros)
+
+# Agrupar por mês para cada ano
+dados_2022 <- bh_total %>%
+  filter(ano == 2022) %>%
+  group_by(mes) %>%
+  summarise(registros = sum(registros), .groups = "drop")
+
+dados_2023 <- bh_total %>%
+  filter(ano == 2023) %>%
+  group_by(mes) %>%
+  summarise(registros = sum(registros), .groups = "drop")
+
+# Parâmetros estatísticos
+media_2022 <- mean(dados_2022$registros)
+media_2023 <- mean(dados_2023$registros)
+desvio_2022 <- sd(dados_2022$registros)
+desvio_2023 <- sd(dados_2023$registros)
+n_2022 <- nrow(dados_2022)
+n_2023 <- nrow(dados_2023)
+
+# Estatística z para diferença entre médias
+erro_padrao_diff <- sqrt((desvio_2022^2)/n_2022 + (desvio_2023^2)/n_2023)
+z_calculado <- (media_2022 - media_2023) / erro_padrao_diff
+z_critico <- qnorm(1 - alfa/2)
+
+# Decisão
+if (abs(z_calculado) > z_critico) {
+  decisao <- "Rejeita H0"
+} else {
+  decisao <- "Não rejeita H0"
+}
+
+cat("Média 2022:", round(media_2022, 2), "\n")
+cat("Média 2023:", round(media_2023, 2), "\n")
+cat("Erro padrão da diferença:", round(erro_padrao_diff, 3), "\n")
+cat("Estatística z calculada:", round(z_calculado, 3), "\n")
+cat("Valor crítico z:", round(z_critico, 3), "\n")
+cat("Decisão:", decisao, "\n")
+# Dados para a curva normal padrão
+x <- seq(-4, 4, length.out = 500)
+y <- dnorm(x)
+df_plot <- data.frame(x = x, y = y)
+
+# Gráfico
+ggplot(df_plot, aes(x = x, y = y)) +
+  geom_area(data = subset(df_plot, x < -z_critico), aes(y = y), fill = "red", alpha = 0.5) +
+  geom_area(data = subset(df_plot, x > z_critico), aes(y = y), fill = "red", alpha = 0.5) +
+  geom_line(color = "black", size = 1.2) +
+  geom_vline(xintercept = z_calculado, color = "blue", linetype = "dashed", size = 1.2) +
+  annotate("text", x = z_calculado, y = 0.05,
+           label = paste0("z = ", round(z_calculado, 3)), color = "blue", hjust = -0.2) +
+  geom_point(aes(x = -3.5, y = 0.35), color = "black") +
+  annotate("text", x = -3.2, y = 0.35, label = "Distribuição Normal Padrão", hjust = 0) +
+  geom_rect(aes(xmin = -3.5, xmax = -3.3, ymin = 0.3, ymax = 0.32), fill = "red", alpha = 0.5) +
+  annotate("text", x = -3.2, y = 0.31, label = "Zona de Rejeição (< -1.96)", hjust = 0) +
+  geom_rect(aes(xmin = -3.5, xmax = -3.3, ymin = 0.25, ymax = 0.27), fill = "red", alpha = 0.5) +
+  annotate("text", x = -3.2, y = 0.26, label = "Zona de Rejeição (> 1.96)", hjust = 0) +
+  labs(title = "Distribuição Normal com Zonas de Rejeição (±1.96)",
+       subtitle = paste("Decisão:", decisao),
+       x = "Estatística z",
+       y = "Densidade") +
+  theme_minimal()
+
+
+
+```
+
+## Regressão Linear Simples - Estupro Consumado
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(lubridate)
+
+# Leitura da base e filtragem
+bh_total <- read_delim("crimes_unificado.csv", delim = ";", show_col_types = FALSE) %>%
+  filter(municipio == "BELO HORIZONTE",
+         natureza == "Estupro Consumado")
+
+# Preparar dados mensais com formatação de data
+estupro_mensal <- bh_total %>%
+  mutate(
+    registros = as.numeric(registros),
+    data_ref = as.Date(paste(ano, mes, "01", sep = "-")),
+    mes_ano = format(data_ref, "%b %Y")
+  ) %>%
+  group_by(mes_ano, data_ref) %>%
+  summarise(registros = sum(registros), .groups = "drop") %>%
+  arrange(data_ref)
+
+# Criar modelo linear real
+modelo <- lm(registros ~ as.numeric(data_ref), data = estupro_mensal)
+
+# Extrair coeficientes
+a <- round(coef(modelo)[1], 2)  # Intercepto
+b <- round(coef(modelo)[2], 2)  # Inclinação
+
+# Montar a equação da reta
+equacao <- paste0("y = ", b, "x + ", a)
+
+equacao
+# Gráfico atualizado com a reta real
+ggplot(estupro_mensal, aes(x = data_ref, y = registros)) +
+  geom_point(size = 2.5, color = "tomato") +
+  geom_smooth(method = "lm", color = "blue", se = FALSE, size = 1.2) +
+  annotate("text", x = as.Date("2023-01-01"), y = max(estupro_mensal$registros),
+           label = "Início de 2023", angle = 90, vjust = -0.5, hjust = -0.2, color = "darkblue") +
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") +
+  labs(
+    title = "Regressão Linear – Estupro Consumado em BH",
+    subtitle = "Com equação da reta baseada nos dados reais",
+    x = "Mês/Ano",
+    y = "Total de Registros"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+```
+
+# Conclusão
+
+A análise estatística dos crimes registrados nos permite identificar padrões e tendências, auxiliando na formulação de políticas públicas de segurança. A comparação entre diferentes regiões e tipos de crimes fornece um panorama detalhado, ajudando na melhor distribuição de recursos e estratégias de combate à criminalidade.
